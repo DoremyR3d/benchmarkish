@@ -130,7 +130,9 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
 
     try:
         pswatcher = psutil.Process(pid)
-    except:
+    except KeyboardInterrupt as ki:
+        raise ki
+    except Exception:
         logger.exception("Couldn't collect data")
         return 1
     start = datetime.datetime.now()
@@ -149,7 +151,9 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
                 # Since we're running inside the popen context, the process WILL remain [DECEASED] on Linux
                 # On Windows NoSuchProcess is thrown instead
                 break
-    except:
+    except KeyboardInterrupt as ki:
+        raise ki
+    except Exception:
         logger.exception("Loop interrupted")
 
     end = datetime.datetime.now()
@@ -184,7 +188,9 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ):
             syscput = info.last_cpu_times.system
             cusercput = info.last_cpu_times.children_user
             csyscput = info.last_cpu_times.children_system
-        except:
+        except KeyboardInterrupt as ki:
+            raise ki
+        except Exception:
             logger.exception("Processing failed. Loops continue")
             continue
         else:
@@ -305,7 +311,9 @@ if __name__ == '__main__':
                     if argv.get('postfailfast') and runret.returncode:
                         logger.error(f"Post command returned {runret.returncode}. Ending the benchmark")
                         break
-        except:
+        except KeyboardInterrupt:
+            exit(1)
+        except Exception:
             logger.exception("Can't open the process")
 
     report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], argv['environ'])
