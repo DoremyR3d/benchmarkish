@@ -274,7 +274,7 @@ if __name__ == '__main__':
             cmd[0] = cmd[0].replace('"', "")
         if cmd[0].endswith("'"):
             cmd[0] = cmd[0].replace("'", "")
-    print(cmd)
+    logger.info(f"Command to be executed: {cmd}")
     procname = argv.get('pname')
     postcmd = argv.get('postcmd')
     if postcmd and sys.platform != 'win32':
@@ -298,8 +298,6 @@ if __name__ == '__main__':
                         break
                     else:
                         continue
-                print(runinfo.mem_percent)
-                print(runinfo.cpu_percent)
                 runinfos.append(runinfo)
                 if postcmd:
                     out.write('='*39 + " POSTCMD " + '='*39 + '\n')
