@@ -11,7 +11,7 @@ from collections import OrderedDict, namedtuple
 from typing import Dict, Any, List
 
 import psutil
-import openpyxl
+# import openpyxl
 
 
 def resolve_args():
@@ -136,6 +136,7 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
     start = datetime.datetime.now()
     try:
         while 1:
+            time.sleep(0.2)
             # Talking about WSL, as_dict throws KeyError there. We must take the slower approach
             info.add_cpu_perc(pswatcher.cpu_percent())
             info.add_mem_perc(pswatcher.memory_percent())
@@ -148,19 +149,18 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
                 # Since we're running inside the popen context, the process WILL remain [DECEASED] on Linux
                 # On Windows NoSuchProcess is thrown instead
                 break
-            time.sleep(1)
     except:
         logger.exception("Loop interrupted")
 
     end = datetime.datetime.now()
-    info.totaltime = f"{(end - start) / datetime.timedelta(milliseconds=1)} ms"
+    info.totaltime = (end - start) / datetime.timedelta(seconds=1)
     return 0
 
 
 def process_data(infos: List[PsRunInfo], vmem, is_environ):
     out = OrderedDict()
     Detail = namedtuple("Detail", ['avg_cpu', 'max_cpu', 'avg_mem', 'max_mem',
-                                   'user_cput', 'system_cput', 'child_user_cput', 'child_system_cput'])
+                                   'user_cput', 'system_cput', 'child_user_cput', 'child_system_cput', 'totaltime'])
     details = []
     entries = 0
     avgcpusum = 0
@@ -171,6 +171,7 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ):
     syscputsum = 0
     cusercputsum = 0
     csyscputsum = 0
+    totaltimesum = 0
     for info in infos:
         try:
             # Extract
@@ -178,7 +179,7 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ):
             maxcpu = info.max_cpu_perc()
             avgmem = info.avg_mem_perc()
             maxmem = info.max_mem_perc()
-            print(info.last_cpu_times)
+            totaltime = info.totaltime
             usercput = info.last_cpu_times.user
             syscput = info.last_cpu_times.system
             cusercput = info.last_cpu_times.children_user
@@ -190,7 +191,7 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ):
             # Append
             details.append(Detail(f"{avgcpu}%", f"{maxcpu}%",
                                   get_size(avgmem * (vmem / 100)), get_size(maxmem * (vmem / 100)),
-                                  usercput, syscput, cusercput, csyscput))
+                                  usercput, syscput, cusercput, csyscput, f"{totaltime} s"))
             entries += 1
             avgcpusum += avgcpu
             maxcpusum += maxcpu
@@ -200,33 +201,54 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ):
             syscputsum += syscput
             cusercputsum += cusercput
             csyscputsum += csyscput
+            totaltimesum += totaltime
             if is_environ:
                 info.merge_environ()
     out['entries'] = entries
     out['avg_cpu'] = f"{avgcpusum / entries}%"
     out['max_cpu'] = f"{maxcpusum / entries}%"
     out['avg_mem'] = get_size((vmem / 100) * (avgmemsum / entries))
-    print(get_size((vmem / 100) * (avgmemsum / entries)))
-    print(get_size((avgmemsum / entries) * (vmem / 100)))
     out['max_mem'] = get_size((vmem / 100) * (maxmemsum / entries))
     out['user_cput'] = usercputsum / entries
     out['system_cput'] = syscputsum / entries
     out['child_user_cput'] = cusercputsum / entries
     out['child_system_cput'] = csyscputsum / entries
+    out['total_time'] = f"{totaltimesum / entries} s"
     out['details'] = details
     out['environ'] = PsRunInfo.environ
     return out
 
 
+def report_logger(results: dict):
+    logger.info('=' * 39 + ' RESULTS ' + '=' * 39)
+    logger.info(f"RUNS: {results['entries']}")
+    logger.info(f"AVERAGE CPU USAGE: {results['avg_cpu']}")
+    logger.info(f"MAX CPU USAGE: {results['max_cpu']}")
+    logger.info(f"AVERAGE MEMORY USAGE: {results['avg_mem']}")
+    logger.info(f"MAX MEMORY USAGE: {results['max_mem']}")
+    logger.info(f"CPU TIME (USER): {results['user_cput']}")
+    logger.info(f"CPU TIME (SYSTEM): {results['system_cput']}")
+    logger.info(f"CPU TIME (CHILD_USER): {results['child_user_cput']}")
+    logger.info(f"CPU TIME (CHILD_SYSTEM): {results['child_system_cput']}")
+    logger.info(f"AVERAGE RUN DURATION: {results['total_time']}")
+    logger.info('=' * 39 + ' DETAILS ' + '=' * 39)
+    logger.info(f"{results['details']}")
+    logger.info("{results['environ']}")
+
+
+def report_json(results: dict, fpname: str):
+    import json
+    with open(fpname, mode='w') as t:
+        json.dump(results, t)
+
+
 def log_init():
-    # # logger
     out = logging.getLogger()
     out.setLevel(logging.INFO)
     fh = logging.FileHandler(f'benchmarkish.{datetime.datetime.today().strftime("%d%m%yT%H%M%S")}.log')
     fh.setLevel(logging.INFO)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    # formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     formatter = logging.Formatter('%(asctime)s -| %(message)s')
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
@@ -237,7 +259,6 @@ def log_init():
 
 if __name__ == '__main__':
     # FIXME
-    #   - for loop
     #   - reporting
     #   - setup.py
 
@@ -277,6 +298,8 @@ if __name__ == '__main__':
                         break
                     else:
                         continue
+                print(runinfo.mem_percent)
+                print(runinfo.cpu_percent)
                 runinfos.append(runinfo)
                 if postcmd:
                     out.write('='*39 + " POSTCMD " + '='*39 + '\n')
@@ -288,30 +311,6 @@ if __name__ == '__main__':
             logger.exception("Can't open the process")
 
     report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], argv['environ'])
-    print(report)
-
-
-    # FIXME split dumplog and dumpxlsx - better to work on the sheet at the end then this split thing
-    # Turns out that machine type and architecture are meaningless stats to get. You have to hope that in the
-    # process environ is stored the architecture if you want that info
-    # The side note is, shared drives do exist, so it makes sense to register the system name
-    # system_name = platform.uname().system
-    # folder_prefix = f"{system_name}/{procname}"
-    # os.makedirs(folder_prefix, exist_ok=True)
-
-    # # FIXME add time
-    # wb_name = folder_prefix + f"/{procname}.{datetime.date.today().strftime('%d%m%y')}.xlsx"
-    # workbook = openpyxl.Workbook()
-    # if workbook.active:
-    #     ws_summary = workbook.active
-    #     ws_summary.title = "SUMMARY"
-    # else:
-    #     ws_summary = workbook.create_sheet("SUMMARY")
-    # initialreport(logger, ws_summary)
-    #
-    # with subprocess.Popen(sys.argv[1]) as subp:
-    #     runinfo = PsRunInfo(0)
-    #     collectdata(subp.pid, runinfo)
-    # writedata(runinfo)
-    # workbook.save(wb_name)
-    print("over")
+    report_logger(report)
+    if argv['json']:
+        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.json')
