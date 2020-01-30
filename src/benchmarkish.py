@@ -1,17 +1,16 @@
-import subprocess
+import argparse
 import datetime
-import sys
-import time
 import logging
+import os
 import platform
 import shlex
-import os
-import argparse
+import subprocess
+import sys
+import time
 from collections import OrderedDict, namedtuple
 from typing import Dict, Any, List
 
 import psutil
-# import openpyxl
 
 
 def resolve_args():
@@ -347,10 +346,76 @@ def report_logger(results: dict):
     logger.info(f"{results['environ']}")
 
 
-def report_json(results: dict, fpname: str):
+def report_json(results: dict, fpname: str, tname: str):
     import json
     with open(fpname, mode='w') as t:
-        json.dump(results, t)
+        json.dump({tname: results}, t)
+
+
+def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active if wb.active else wb.create_sheet()
+    ws.title = tname
+
+    boldfont = Font(bold=True)
+
+    cell = ws.cell(1, 1, "RUNS")
+    cell.font = boldfont
+    _ = ws.cell(2, 1, results['entries'])
+    cell = ws.cell(1, 2, "TRIM%")
+    cell.font = boldfont
+    _ = ws.cell(2, 2, results['trim'])
+    cell = ws.cell(1, 3, "AVG CPU%")
+    cell.font = boldfont
+    _ = ws.cell(2, 3, results['avg_cpu'])
+    cell = ws.cell(1, 4, "TR.AVG CPU%")
+    cell.font = boldfont
+    _ = ws.cell(2, 4, results['trimmed_avg_cpu'])
+    cell = ws.cell(1, 5, "MAX CPU%")
+    cell.font = boldfont
+    _ = ws.cell(2, 5, results['max_cpu'])
+    cell = ws.cell(1, 6, "TR.MAX CPU%")
+    cell.font = boldfont
+    _ = ws.cell(2, 6, results['trimmed_avg_cpu'])
+    cell = ws.cell(1, 7, "AVG MEM")
+    cell.font = boldfont
+    _ = ws.cell(2, 7, results['avg_mem'])
+    cell = ws.cell(1, 8, "TR.AVG MEM")
+    cell.font = boldfont
+    _ = ws.cell(2, 8, results['trimmed_avg_mem'])
+    cell = ws.cell(1, 9, "MAX MEM")
+    cell.font = boldfont
+    _ = ws.cell(2, 9, results['max_mem'])
+    cell = ws.cell(1, 10, "TR.MAX MEM")
+    cell.font = boldfont
+    _ = ws.cell(2, 10, results['max_trimmed_mem'])
+    cell = ws.cell(1, 11, "USER CPUt")
+    cell.font = boldfont
+    _ = ws.cell(2, 11, results['user_cput'])
+    cell = ws.cell(1, 12, "SYS CPUt")
+    cell.font = boldfont
+    _ = ws.cell(2, 12, results['system_cput'])
+    cell = ws.cell(1, 13, "TIME")
+    cell.font = boldfont
+    _ = ws.cell(2, 13, results['total_time'])
+
+    rownum = 4
+    colnum = 3
+    for detail in results['details']:
+        _ = ws.cell(rownum, 1, rownum - 3)
+        for value in detail:
+            _ = ws.cell(rownum, colnum, value)
+            colnum += 1
+        rownum += 1
+        colnum = 3
+
+    # TODO Env dump
+
+    wb.save(fpname)
+    pass
 
 
 def log_init():
@@ -387,6 +452,7 @@ if __name__ == '__main__':
             cmd[0] = cmd[0].replace("'", "")
     logger.info(f"Command to be executed: {cmd}")
     procname = argv.get('pname')
+    testname = argv.get('testname') if argv.get('testname') else start_time.strftime("%y%m%d%H%M%S")
     postcmd = argv.get('postcmd')
     if postcmd and sys.platform != 'win32':
         postcmd = list(shlex.shlex(postcmd, punctuation_chars=True))
@@ -428,4 +494,6 @@ if __name__ == '__main__':
     report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], trim, argv['details'], argv['environ'])
     report_logger(report)
     if argv['json']:
-        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.json')
+        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.json', testname)
+    if argv['xlsx']:
+        report_xlsx(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.xlsx', testname, argv)
