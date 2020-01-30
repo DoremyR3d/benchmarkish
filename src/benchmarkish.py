@@ -48,6 +48,34 @@ def resolve_args():
     return vars(p.parse_args())
 
 
+def trim_array(arr: List, mean: float) -> List:
+    if mean == 0:
+        return arr
+    if mean < 0:
+        mean *= -1
+    if mean >= 0.5:
+        logger.info("Won't trim an array over 49%")
+        return arr
+    l_arr = len(arr)
+    if l_arr == 0:
+        return arr
+    l_trim = int(l_arr * (2 * mean))
+    if l_trim % 2:
+        n_remove = int((l_trim - 1) / 2)
+        n_err = 1
+    else:
+        n_remove = int(l_trim / 2)
+        n_err = 0
+    s_arr = sorted(arr)
+    s_arr = s_arr[n_remove:(len(s_arr) - n_remove)]
+    if n_err:
+        s_arr[0] = (s_arr[0] / 2) + (s_arr[len(s_arr)-1] / 2)
+        del s_arr[len(s_arr) - 1]
+    return s_arr
+
+
+# 19876 15900,8 1987.6
+
 class PsRunInfo:
     environ = {}
 
@@ -55,27 +83,89 @@ class PsRunInfo:
         self.index = index
         self.cpu_percent = []
         self.mem_percent = []
+        self.__trim_cpu_percent = 0
+        self.__trimmed_cpu_percent = None
+        self.__trim_mem_percent = 0
+        self.__trimmed_mem_percent = None
         self.last_cpu_times = None
         self.totaltime = None
         self.environ = None
 
     def add_cpu_perc(self, cpuperc):
         self.cpu_percent.append(cpuperc)
+        self.__trimmed_cpu_percent = None
 
     def avg_cpu_perc(self):
         return sum(self.cpu_percent) / len(self.cpu_percent)
 
+    def trimmed_avg_cpu_perc(self, trim: float):
+        if trim == 0:
+            return self.avg_cpu_perc()
+        if trim < 0:
+            trim *= -1
+        if trim >= 0.5:
+            logger.info("Won't trim over 49%")
+            return self.avg_cpu_perc()
+        if self.__trim_cpu_percent == trim and self.__trimmed_cpu_percent:
+            return sum(self.__trimmed_cpu_percent) / len(self.__trimmed_cpu_percent)
+        self.__trim_cpu_percent = trim
+        self.__trimmed_cpu_percent = trim_array(self.cpu_percent, trim)
+        return sum(self.__trimmed_cpu_percent) / len(self.__trimmed_cpu_percent)
+
     def max_cpu_perc(self):
         return max(self.cpu_percent)
 
+    def max_trimmed_cpu_perc(self, trim: float):
+        if trim == 0:
+            return self.max_cpu_perc()
+        if trim < 0:
+            trim *= -1
+        if trim >= 0.5:
+            logger.info("Won't trim over 49%")
+            return self.max_cpu_perc()
+        if self.__trim_cpu_percent == trim and self.__trimmed_cpu_percent:
+            return max(self.__trimmed_cpu_percent)
+        self.__trim_cpu_percent = trim
+        self.__trimmed_cpu_percent = trim_array(self.cpu_percent, trim)
+        return max(self.__trimmed_cpu_percent)
+
     def add_mem_perc(self, memperc):
         self.mem_percent.append(memperc)
+        self.__trimmed_mem_percent = None
 
     def avg_mem_perc(self):
         return sum(self.mem_percent) / len(self.mem_percent)
 
+    def trimmed_avg_mem_perc(self, trim: float):
+        if trim == 0:
+            return self.avg_mem_perc()
+        if trim < 0:
+            trim *= -1
+        if trim >= 0.5:
+            logger.info("Won't trim over 49%")
+            return self.avg_mem_perc()
+        if self.__trim_mem_percent == trim and self.__trimmed_mem_percent:
+            return sum(self.__trimmed_mem_percent) / len(self.__trimmed_mem_percent)
+        self.__trim_mem_percent = trim
+        self.__trimmed_mem_percent = trim_array(self.mem_percent, trim)
+        return sum(self.__trimmed_mem_percent) / len(self.__trimmed_mem_percent)
+
     def max_mem_perc(self):
         return max(self.cpu_percent)
+
+    def max_trimmed_mem_perc(self, trim: float):
+        if trim == 0:
+            return self.max_mem_perc()
+        if trim < 0:
+            trim *= -1
+        if trim >= 0.5:
+            logger.info("Won't trim over 49%")
+            return self.max_mem_perc()
+        if self.__trim_mem_percent == trim and self.__trimmed_mem_percent:
+            return max(self.__trimmed_mem_percent)
+        self.__trim_mem_percent = trim
+        self.__trimmed_mem_percent = trim_array(self.mem_percent, trim)
+        return max(self.__trimmed_mem_percent)
 
     def merge_environ(self):
         PsRunInfo.environ.update(self.environ)
@@ -161,7 +251,7 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
     return 0
 
 
-def process_data(infos: List[PsRunInfo], vmem, is_environ):
+def process_data(infos: List[PsRunInfo], vmem, is_environ, trim):
     out = OrderedDict()
     Detail = namedtuple("Detail", ['avg_cpu', 'max_cpu', 'avg_mem', 'max_mem',
                                    'user_cput', 'system_cput', 'child_user_cput', 'child_system_cput', 'totaltime'])
@@ -267,6 +357,8 @@ if __name__ == '__main__':
     # FIXME
     #   - reporting
     #   - setup.py
+    #   - --detail
+    #   - --trim
 
     argv = resolve_args()
     logger = log_init()
@@ -311,8 +403,8 @@ if __name__ == '__main__':
                     if argv.get('postfailfast') and runret.returncode:
                         logger.error(f"Post command returned {runret.returncode}. Ending the benchmark")
                         break
-        except KeyboardInterrupt:
-            exit(1)
+        except KeyboardInterrupt as ki:
+            raise ki
         except Exception:
             logger.exception("Can't open the process")
 
