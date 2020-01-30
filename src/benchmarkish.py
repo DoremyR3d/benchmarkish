@@ -45,6 +45,10 @@ def resolve_args():
                    help="If specified, it makes the benchmark fail if the cmd returns a non-zero value")
     p.add_argument('--environ', default=False, action='store_true',
                    help="Dumps the environment variables of the watched process in the report")
+    p.add_argument('--trim', type=int, default=10,
+                   help="Define which percentage of the results to trim to elaborate the trimmed stats")
+    p.add_argument('--details', default=False, action='store_true',
+                   help="Dumps informations specific to every single run inside the report")
     return vars(p.parse_args())
 
 
@@ -73,8 +77,6 @@ def trim_array(arr: List, mean: float) -> List:
         del s_arr[len(s_arr) - 1]
     return s_arr
 
-
-# 19876 15900,8 1987.6
 
 class PsRunInfo:
     environ = {}
@@ -251,33 +253,37 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
     return 0
 
 
-def process_data(infos: List[PsRunInfo], vmem, is_environ, trim):
+def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     out = OrderedDict()
-    Detail = namedtuple("Detail", ['avg_cpu', 'max_cpu', 'avg_mem', 'max_mem',
-                                   'user_cput', 'system_cput', 'child_user_cput', 'child_system_cput', 'totaltime'])
+    Detail = namedtuple("Detail", ['avg_cpu', 'tr_avg_cpu', 'max_cpu', 'max_tr_cpu', 'avg_mem', 'tr_avg_mem',
+                                   'max_mem', 'max_tr_mem', 'user_cput', 'system_cput', 'totaltime'])
     details = []
     entries = 0
     avgcpusum = 0
+    travgcpusum = 0
     maxcpusum = 0
+    maxtrcpusum = 0
     avgmemsum = 0
+    travgmemsum = 0
     maxmemsum = 0
+    maxtrmemsum = 0
     usercputsum = 0
     syscputsum = 0
-    cusercputsum = 0
-    csyscputsum = 0
     totaltimesum = 0
     for info in infos:
         try:
             # Extract
             avgcpu = info.avg_cpu_perc()
+            travgcpu = info.trimmed_avg_cpu_perc(trim)
             maxcpu = info.max_cpu_perc()
+            maxtrcpu = info.max_trimmed_cpu_perc(trim)
             avgmem = info.avg_mem_perc()
+            travgmem = info.trimmed_avg_mem_perc(trim)
             maxmem = info.max_mem_perc()
+            maxtrmem = info.max_trimmed_mem_perc(trim)
             totaltime = info.totaltime
             usercput = info.last_cpu_times.user
             syscput = info.last_cpu_times.system
-            cusercput = info.last_cpu_times.children_user
-            csyscput = info.last_cpu_times.children_system
         except KeyboardInterrupt as ki:
             raise ki
         except Exception:
@@ -285,32 +291,38 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ, trim):
             continue
         else:
             # Append
-            details.append(Detail(f"{avgcpu}%", f"{maxcpu}%",
-                                  get_size(avgmem * (vmem / 100)), get_size(maxmem * (vmem / 100)),
-                                  usercput, syscput, cusercput, csyscput, f"{totaltime} s"))
+            details.append(Detail(f"{avgcpu}%", f"{travgcpu}", f"{maxcpu}%", f"{maxtrcpu}",
+                                  get_size(avgmem * (vmem / 100)), get_size(travgmem * (vmem / 100)),
+                                  get_size(maxmem * (vmem / 100)), get_size(maxtrmem * (vmem / 100)),
+                                  usercput, syscput, f"{totaltime} s"))
             entries += 1
             avgcpusum += avgcpu
+            travgcpusum += travgcpu
             maxcpusum += maxcpu
+            maxtrcpusum +=maxtrcpu
             avgmemsum += avgmem
+            travgmemsum += travgmem
             maxmemsum += maxmem
+            maxtrmemsum += maxtrmem
             usercputsum += usercput
             syscputsum += syscput
-            cusercputsum += cusercput
-            csyscputsum += csyscput
             totaltimesum += totaltime
             if is_environ:
                 info.merge_environ()
     out['entries'] = entries
+    out['trim'] = trim
     out['avg_cpu'] = f"{avgcpusum / entries}%"
+    out['trimmed_avg_cpu'] = f"{travgcpusum / entries}%"
     out['max_cpu'] = f"{maxcpusum / entries}%"
+    out['max_trimmed_cpu'] = f"{maxtrcpusum / entries}%"
     out['avg_mem'] = get_size((vmem / 100) * (avgmemsum / entries))
+    out['trimmed_avg_mem'] = get_size((vmem / 100) * (travgmemsum / entries))
     out['max_mem'] = get_size((vmem / 100) * (maxmemsum / entries))
+    out['max_trimmed_mem'] = get_size((vmem / 100) * (maxtrmemsum / entries))
     out['user_cput'] = usercputsum / entries
     out['system_cput'] = syscputsum / entries
-    out['child_user_cput'] = cusercputsum / entries
-    out['child_system_cput'] = csyscputsum / entries
     out['total_time'] = f"{totaltimesum / entries} s"
-    out['details'] = details
+    out['details'] = details if is_detailed else []
     out['environ'] = PsRunInfo.environ
     return out
 
@@ -318,18 +330,21 @@ def process_data(infos: List[PsRunInfo], vmem, is_environ, trim):
 def report_logger(results: dict):
     logger.info('=' * 39 + ' RESULTS ' + '=' * 39)
     logger.info(f"RUNS: {results['entries']}")
+    logger.info(f"TRIM PERCENTAGE: {results['trim']}%")
     logger.info(f"AVERAGE CPU USAGE: {results['avg_cpu']}")
+    logger.info(f"AVERAGE CPU USAGE (TRIMMED): {results['trimmed_avg_cpu']}")
     logger.info(f"MAX CPU USAGE: {results['max_cpu']}")
+    logger.info(f"MAX CPU USAGE (TRIMMED): {results['max_trimmed_cpu']}")
     logger.info(f"AVERAGE MEMORY USAGE: {results['avg_mem']}")
+    logger.info(f"AVERAGE MEMORY USAGE (TRIMMED): {results['trimmed_avg_mem']}")
     logger.info(f"MAX MEMORY USAGE: {results['max_mem']}")
+    logger.info(f"MAX MEMORY USAGE (TRIMMED): {results['max_trimmed_mem']}")
     logger.info(f"CPU TIME (USER): {results['user_cput']}")
     logger.info(f"CPU TIME (SYSTEM): {results['system_cput']}")
-    logger.info(f"CPU TIME (CHILD_USER): {results['child_user_cput']}")
-    logger.info(f"CPU TIME (CHILD_SYSTEM): {results['child_system_cput']}")
     logger.info(f"AVERAGE RUN DURATION: {results['total_time']}")
     logger.info('=' * 39 + ' DETAILS ' + '=' * 39)
     logger.info(f"{results['details']}")
-    logger.info("{results['environ']}")
+    logger.info(f"{results['environ']}")
 
 
 def report_json(results: dict, fpname: str):
@@ -357,8 +372,6 @@ if __name__ == '__main__':
     # FIXME
     #   - reporting
     #   - setup.py
-    #   - --detail
-    #   - --trim
 
     argv = resolve_args()
     logger = log_init()
@@ -377,6 +390,10 @@ if __name__ == '__main__':
     postcmd = argv.get('postcmd')
     if postcmd and sys.platform != 'win32':
         postcmd = list(shlex.shlex(postcmd, punctuation_chars=True))
+
+    trim = argv.get('trim')
+    if trim != 0:
+        trim /= 100
 
     # create directory structure
     folder_prefix = f"{argv['envstats']['OS']}/{procname}" if not argv['envname'] \
@@ -408,7 +425,7 @@ if __name__ == '__main__':
         except Exception:
             logger.exception("Can't open the process")
 
-    report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], argv['environ'])
+    report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], trim, argv['details'], argv['environ'])
     report_logger(report)
     if argv['json']:
         report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.json')
