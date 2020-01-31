@@ -244,6 +244,8 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
                 break
     except KeyboardInterrupt as ki:
         raise ki
+    except psutil.NoSuchProcess:
+        logger.info("No such process, loop interrupted")
     except Exception:
         logger.exception("Loop interrupted")
 
@@ -356,6 +358,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
+    # TODO Split new wb and update wb
     wb = Workbook()
     ws = wb.active if wb.active else wb.create_sheet()
     ws.title = tname
@@ -412,7 +415,24 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
         rownum += 1
         colnum = 3
 
-    # TODO Env dump
+    cell = ws.cell(1, 15, "SYSTEM SPECS")
+    cell.font = boldfont
+    rownum = 2
+    colnum = 15
+    for key, value in env['envstats'].items():
+        cell = ws.cell(rownum, colnum, key)
+        cell.font = boldfont
+        _ = ws.cell(rownum, colnum + 1, value)
+        rownum += 1
+        pass
+    rownum += 1
+    cell = ws.cell(rownum, colnum, "ENVIRONMENT")
+    cell.font = boldfont
+    rownum += 1
+    for key, value in results['environ'].items():
+        cell = ws.cell(rownum, colnum, key)
+        cell.font = boldfont
+        _ = ws.cell(rownum, colnum + 1, value)
 
     wb.save(fpname)
     pass
