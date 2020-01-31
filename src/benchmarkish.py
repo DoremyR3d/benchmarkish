@@ -292,10 +292,10 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
             continue
         else:
             # Append
-            details.append(Detail(f"{avgcpu}%", f"{travgcpu}", f"{maxcpu}%", f"{maxtrcpu}",
+            details.append(Detail(f"{avgcpu:.2f}%", f"{travgcpu:.2f}%", f"{maxcpu:.2f}%", f"{maxtrcpu:.2f}%",
                                   get_size(avgmem * (vmem / 100)), get_size(travgmem * (vmem / 100)),
                                   get_size(maxmem * (vmem / 100)), get_size(maxtrmem * (vmem / 100)),
-                                  usercput, syscput, f"{totaltime} s"))
+                                  usercput, syscput, f"{totaltime:.2f} s"))
             entries += 1
             avgcpusum += avgcpu
             travgcpusum += travgcpu
@@ -312,9 +312,9 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
                 info.merge_environ()
     out['entries'] = entries
     out['trim'] = trim
-    out['avg_cpu'] = f"{avgcpusum / entries}%"
-    out['trimmed_avg_cpu'] = f"{travgcpusum / entries}%"
-    out['max_cpu'] = f"{maxcpusum / entries}%"
+    out['avg_cpu'] = f"{(avgcpusum / entries):.2f}%"
+    out['trimmed_avg_cpu'] = f"{(travgcpusum / entries):.2f}%"
+    out['max_cpu'] = f"{(maxcpusum / entries):.2f}%"
     out['max_trimmed_cpu'] = f"{maxtrcpusum / entries}%"
     out['avg_mem'] = get_size((vmem / 100) * (avgmemsum / entries))
     out['trimmed_avg_mem'] = get_size((vmem / 100) * (travgmemsum / entries))
@@ -322,7 +322,7 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     out['max_trimmed_mem'] = get_size((vmem / 100) * (maxtrmemsum / entries))
     out['user_cput'] = usercputsum / entries
     out['system_cput'] = syscputsum / entries
-    out['total_time'] = f"{totaltimesum / entries} s"
+    out['total_time'] = f"{(totaltimesum / entries):.2f} s"
     out['details'] = details if is_detailed else []
     out['environ'] = PsRunInfo.environ
     return out
@@ -370,7 +370,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     _ = ws.cell(2, 1, results['entries'])
     cell = ws.cell(1, 2, "TRIM%")
     cell.font = boldfont
-    _ = ws.cell(2, 2, results['trim'])
+    _ = ws.cell(2, 2, (results['trim'] * 100))
     cell = ws.cell(1, 3, "AVG CPU%")
     cell.font = boldfont
     _ = ws.cell(2, 3, results['avg_cpu'])
@@ -422,7 +422,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     for key, value in env['envstats'].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
-        _ = ws.cell(rownum, colnum + 1, value)
+        _ = ws.cell(rownum, colnum + 1, str(value))
         rownum += 1
         pass
     rownum += 1
@@ -432,7 +432,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     for key, value in results['environ'].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
-        _ = ws.cell(rownum, colnum + 1, value)
+        _ = ws.cell(rownum, colnum + 1, str(value))
 
     wb.save(fpname)
     pass
