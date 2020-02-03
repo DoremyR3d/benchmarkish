@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import sys
 import time
+import statistics
 from collections import OrderedDict, namedtuple
 from typing import Dict, Any, List
 
@@ -270,6 +271,7 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     maxtrmemsum = 0
     usercputsum = 0
     syscputsum = 0
+    timelist = []
     totaltimesum = 0
     for info in infos:
         try:
@@ -308,6 +310,7 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
             usercputsum += usercput
             syscputsum += syscput
             totaltimesum += totaltime
+            timelist.append(totaltime)
             if is_environ:
                 info.merge_environ()
     out['entries'] = entries
@@ -323,6 +326,9 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     out['user_cput'] = usercputsum / entries
     out['system_cput'] = syscputsum / entries
     out['total_time'] = f"{(totaltimesum / entries):.2f} s"
+    out['max_time'] = f"{max(timelist)} s"
+    out['min_time'] = f"{min(timelist)} s"
+    out['mid_time'] = f"{statistics.median(timelist)} s"
     out['details'] = details if is_detailed else []
     out['environ'] = PsRunInfo.environ
     return out
@@ -343,6 +349,9 @@ def report_logger(results: dict):
     logger.info(f"CPU TIME (USER): {results['user_cput']}")
     logger.info(f"CPU TIME (SYSTEM): {results['system_cput']}")
     logger.info(f"AVERAGE RUN DURATION: {results['total_time']}")
+    logger.info(f"MAX RUN DURATION: {results['max_time']}")
+    logger.info(f"MIN RUN DURATION: {results['min_time']}")
+    logger.info(f"MEDIAN RUN DURATION: {results['mid_time']}")
     logger.info('=' * 39 + ' DETAILS ' + '=' * 39)
     logger.info(f"{results['details']}")
     logger.info(f"{results['environ']}")
@@ -354,13 +363,23 @@ def report_json(results: dict, fpname: str, tname: str):
         json.dump({tname: results}, t)
 
 
-def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
-    from openpyxl import Workbook
+def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname: str, append: bool, env: dict):
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Font
 
     # TODO Split new wb and update wb
-    wb = Workbook()
-    ws = wb.active if wb.active else wb.create_sheet()
+    if append:
+        fname = f"{fprefix}.{starttime.strftime('%H%M%S')}.xlsx"
+        tname = f"{tname}_{starttime.strftime('%H%M%S')}"
+    else:
+        fname = f"{fprefix}.{starttime.strftime('%y%m%d_%H%M%S')}.xlsx"
+
+    if os.path.exists(fname):
+        wb = load_workbook(fname)
+        ws = wb.create_sheet()
+    else:
+        wb = Workbook()
+        ws = wb.active if wb.active else wb.create_sheet()
     ws.title = tname
 
     boldfont = Font(bold=True)
@@ -401,9 +420,18 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     cell = ws.cell(1, 12, "SYS CPUt")
     cell.font = boldfont
     _ = ws.cell(2, 12, results['system_cput'])
-    cell = ws.cell(1, 13, "TIME")
+    cell = ws.cell(1, 13, "AVG TIME")
     cell.font = boldfont
     _ = ws.cell(2, 13, results['total_time'])
+    cell = ws.cell(1, 14, "MAX TIME")
+    cell.font = boldfont
+    _ = ws.cell(2, 14, results['max_time'])
+    cell = ws.cell(1, 15, "MIN TIME")
+    cell.font = boldfont
+    _ = ws.cell(2, 15, results['min_time'])
+    cell = ws.cell(1, 16, "MEDIAN TIME")
+    cell.font = boldfont
+    _ = ws.cell(2, 16, results['mid_time'])
 
     rownum = 4
     colnum = 3
@@ -418,7 +446,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
     cell = ws.cell(1, 15, "SYSTEM SPECS")
     cell.font = boldfont
     rownum = 2
-    colnum = 15
+    colnum = 17
     for key, value in env['envstats'].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
@@ -434,7 +462,7 @@ def report_xlsx(results: dict, fpname: str, tname: str, env: dict):
         cell.font = boldfont
         _ = ws.cell(rownum, colnum + 1, str(value))
 
-    wb.save(fpname)
+    wb.save(fname)
     pass
 
 
@@ -472,7 +500,10 @@ if __name__ == '__main__':
             cmd[0] = cmd[0].replace("'", "")
     logger.info(f"Command to be executed: {cmd}")
     procname = argv.get('pname')
-    testname = argv.get('testname') if argv.get('testname') else start_time.strftime("%y%m%d%H%M%S")
+    if argv.get('testname'):
+        testname = f"{argv.get('testname')}_{start_time.strftime('%H%M%S')}" if argv.get('append') else argv.get('testname')
+    else:
+        testname = start_time.strftime("%y%m%d%H%M%S")
     postcmd = argv.get('postcmd')
     if postcmd and sys.platform != 'win32':
         postcmd = list(shlex.shlex(postcmd, punctuation_chars=True))
@@ -490,7 +521,7 @@ if __name__ == '__main__':
     for i in range(0, argv['n']):
         runinfo = PsRunInfo(i)
         try:
-            with open(f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.{i}.out', mode='w') as out:
+            with open(f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%d_%H%M%S")}.{i}.out', mode='w') as out:
                 with subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT) as subp:
                     failed = collectdata(subp.pid, runinfo, argv['environ'])
                 if failed:
@@ -514,6 +545,7 @@ if __name__ == '__main__':
     report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], trim, argv['details'], argv['environ'])
     report_logger(report)
     if argv['json']:
-        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.json', testname)
+        # Actually, do I really need to make an incremental json?
+        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%d_%H%M%S")}.json', testname)
     if argv['xlsx']:
-        report_xlsx(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%dT%H%M%S")}.xlsx', testname, argv)
+        report_xlsx(report, f'{folder_prefix}/{procname}', start_time, testname, argv['append'], argv)
