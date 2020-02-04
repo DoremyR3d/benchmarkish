@@ -369,7 +369,7 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
 
     # TODO Split new wb and update wb
     if append:
-        fname = f"{fprefix}.{starttime.strftime('%H%M%S')}.xlsx"
+        fname = f"{fprefix}.{starttime.strftime('%y%m%d')}.xlsx"
         tname = f"{tname}_{starttime.strftime('%H%M%S')}"
     else:
         fname = f"{fprefix}.{starttime.strftime('%y%m%d_%H%M%S')}.xlsx"
