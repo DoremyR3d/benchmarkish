@@ -443,10 +443,11 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
         rownum += 1
         colnum = 3
 
-    cell = ws.cell(1, 15, "SYSTEM SPECS")
+    rownum = 1
+    colnum = 18
+    cell = ws.cell(rownum, colnum, "SYSTEM SPECS")
     cell.font = boldfont
-    rownum = 2
-    colnum = 17
+    rownum += 1
     for key, value in env['envstats'].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
