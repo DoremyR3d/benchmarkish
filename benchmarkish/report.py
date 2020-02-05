@@ -1,4 +1,5 @@
 import datetime
+import os
 
 from benchmarkish import *
 
@@ -32,7 +33,7 @@ def report_json(results: dict, fpname: str, tname: str):
         json.dump({tname: results}, t)
 
 
-def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname: str, append: bool, env: dict):
+def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname: str, append: bool, envdata: dict):
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Font
 
@@ -116,7 +117,7 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
     cell = ws.cell(rownum, colnum, ENV_L)
     cell.font = boldfont
     rownum += 1
-    for key, value in env[ENV_I].items():
+    for key, value in envdata.items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
         _ = ws.cell(rownum, colnum + 1, str(value))

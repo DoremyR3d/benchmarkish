@@ -1,61 +1,23 @@
-import argparse
 import datetime
 import os
 import platform
 import shlex
+import statistics
 import subprocess
 import sys
 import time
-import statistics
 from collections import OrderedDict, namedtuple
-from typing import Dict, Any, List
+from typing import List
 
-from benchmarkish import *
-from benchmarkish.model import PsRunInfo
-from benchmarkish.format import get_size
-from benchmarkish.report import report_json, report_logger, report_xlsx
 import psutil
 
-
-def resolve_args():
-    p = argparse.ArgumentParser(description="Command line utility that executes a command, watches over the created "
-                                            "process collecting memory and cpu usage and creates report using the "
-                                            "collected data. Everything is collected in the current working directory "
-                                            "splitting the results according to process and os, including anything "
-                                            "the command prints on stdout/stderr")
-    p.add_argument('command', type=str,
-                   help="The command to be executed. Accepts anything legal for the default system interpreter")
-    p.add_argument('-n', type=int, required=True,
-                   help="The number of times the command must be executed")
-    p.add_argument('--testname', '-t', type=str,
-                   help="Assigns a name to the test executed")
-    p.add_argument('--envname', '-e', type=str,
-                   help="Appends a custom string to the os name. e.g.: Linux_envname")
-    p.add_argument('--pname', '-p', type=str, required=True,
-                   help="Gives a custom name to the benchmark, instead of using the command's first token")
-    p.add_argument('--append', '-a', default=False, action='store_true',
-                   help="If a compatible report exists, it is extended and not replaced. Every time specifier is "
-                        "appended to the test name, and not the report file name")
-    p.add_argument('--xlsx', default=False, action='store_true',
-                   help="If specified, it generates a xlsx report file (requires openpyxl)")
-    p.add_argument('--json', default=False, action='store_true',
-                   help="If specified, it generates a json report file")
-    p.add_argument('-postcmd', type=str,
-                   help="After every run executes another command, which isn't benchmarked")
-    p.add_argument('--postfailfast', default=False, action='store_true',
-                   help="If specified, it makes the benchmark stop if the postcmd returns a non-zero value")
-    p.add_argument('--failfast', default=False, action='store_true',
-                   help="If specified, it makes the benchmark fail if the cmd returns a non-zero value")
-    p.add_argument('--environ', default=False, action='store_true',
-                   help="Dumps the environment variables of the watched process in the report")
-    p.add_argument('--trim', type=int, default=10,
-                   help="Define which percentage of the results to trim to elaborate the trimmed stats")
-    p.add_argument('--details', default=False, action='store_true',
-                   help="Dumps informations specific to every single run inside the report")
-    return vars(p.parse_args())
+from benchmarkish import *
+from benchmarkish.format import get_size
+from benchmarkish.model import PsRunInfo
+from benchmarkish.report import report_json, report_logger, report_xlsx
 
 
-def collect_envdata(argmap: Dict[str, Any]):
+def collect_envdata():
     udict = OrderedDict()
 
     # platform info
@@ -83,7 +45,7 @@ def collect_envdata(argmap: Dict[str, Any]):
         logger.info(f"{key}: {value}")
     logger.info('=' * 87)
 
-    argmap[ENV_I] = udict
+    return udict
 
 
 def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
@@ -127,7 +89,7 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
     return 0
 
 
-def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
+def process_data(infos: List[PsRunInfo], vmem, trimvalue, is_detailed, is_environ):
     out = OrderedDict()
     Detail = namedtuple("Detail", [MEANCPU_I, T_MEANCPU_I, MAXCPU_I, T_MAXCPU_I, MEANMEM_I, T_MEANMEM_I,
                                    MAXMEM_I, T_MAXMEM_I, CPUTIME_I, SYSCPUTIME_I, TIME_I])
@@ -149,13 +111,13 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
         try:
             # Extract
             avgcpu = info.avg_cpu_perc()
-            travgcpu = info.trimmed_avg_cpu_perc(trim)
+            travgcpu = info.trimmed_avg_cpu_perc(trimvalue)
             maxcpu = info.max_cpu_perc()
-            maxtrcpu = info.max_trimmed_cpu_perc(trim)
+            maxtrcpu = info.max_trimmed_cpu_perc(trimvalue)
             avgmem = info.avg_mem_perc()
-            travgmem = info.trimmed_avg_mem_perc(trim)
+            travgmem = info.trimmed_avg_mem_perc(trimvalue)
             maxmem = info.max_mem_perc()
-            maxtrmem = info.max_trimmed_mem_perc(trim)
+            maxtrmem = info.max_trimmed_mem_perc(trimvalue)
             totaltime = info.totaltime
             usercput = info.last_cpu_times.user
             syscput = info.last_cpu_times.system
@@ -174,7 +136,7 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
             avgcpusum += avgcpu
             travgcpusum += travgcpu
             maxcpusum += maxcpu
-            maxtrcpusum +=maxtrcpu
+            maxtrcpusum += maxtrcpu
             avgmemsum += avgmem
             travgmemsum += travgmem
             maxmemsum += maxmem
@@ -186,7 +148,7 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
             if is_environ:
                 info.merge_environ()
     out[RUNS_I] = entries
-    out[TRIM_I] = trim
+    out[TRIM_I] = trimvalue
     out[MEANCPU_I] = f"{(avgcpusum / entries):.2f}%"
     out[T_MEANCPU_I] = f"{(travgcpusum / entries):.2f}%"
     out[MAXCPU_I] = f"{(maxcpusum / entries):.2f}%"
@@ -206,59 +168,65 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     return out
 
 
-if __name__ == '__main__':
-    # FIXME
-    #   - reporting
-    #   - setup.py
-
-    argv = resolve_args()
-    collect_envdata(argv)
+def execute_benchmarkish(
+        command,
+        execnum,
+        processname,
+        testname=None,
+        envname=None,
+        extendreport=False,
+        xlsx=False,
+        json=False,
+        postcommand=None,
+        failfast=False,
+        postfailfast=False,
+        fetchenviron=False,
+        trim=10,
+        gatherdetails=False
+):
+    envdata = collect_envdata()
 
     start_time = datetime.datetime.today()
-    cmd = argv.get('command')
     if sys.platform != 'win32':
-        cmd = list(shlex.shlex(cmd, punctuation_chars=True))
-        if cmd[0].endswith('"'):
-            cmd[0] = cmd[0].replace('"', "")
-        if cmd[0].endswith("'"):
-            cmd[0] = cmd[0].replace("'", "")
-    logger.info(f"Command to be executed: {cmd}")
-    procname = argv.get('pname')
-    if argv.get('testname'):
-        testname = f"{argv.get('testname')}_{start_time.strftime('%H%M%S')}" if argv.get('append') else argv.get('testname')
+        command = list(shlex.shlex(command, punctuation_chars=True))
+        if command[0].endswith('"'):
+            command[0] = command[0].replace('"', "")
+        if command[0].endswith("'"):
+            command[0] = command[0].replace("'", "")
+    logger.info(f"Command to be executed: {command}")
+    if testname:
+        testname = f"{testname}_{start_time.strftime('%H%M%S')}" if extendreport else testname
     else:
         testname = start_time.strftime("%y%m%d%H%M%S")
-    postcmd = argv.get('postcmd')
-    if postcmd and sys.platform != 'win32':
-        postcmd = list(shlex.shlex(postcmd, punctuation_chars=True))
+    if postcommand and sys.platform != 'win32':
+        postcommand = list(shlex.shlex(postcommand, punctuation_chars=True))
 
-    trim = argv.get('trim')
     if trim != 0:
         trim /= 100
 
     # create directory structure
-    folder_prefix = f"{argv[ENV_I]['OS']}/{procname}" if not argv['envname'] \
-        else f"{argv[ENV_I]['OS']}_{argv['envname']}/{procname}"
+    folder_prefix = f"{envdata[OS_I]}/{processname}" if not envname \
+        else f"{envdata[OS_I]}_{envname}/{processname}"
     os.makedirs(folder_prefix, exist_ok=True)
 
     runinfos = []
-    for i in range(0, argv['n']):
+    for i in range(0, execnum):
         runinfo = PsRunInfo(i)
         try:
-            with open(f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%d_%H%M%S")}.{i}.out', mode='w') as out:
-                with subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT) as subp:
-                    failed = collectdata(subp.pid, runinfo, argv[PROCENV_I])
+            with open(f'{folder_prefix}/{processname}.{start_time.strftime("%y%m%d_%H%M%S")}.{i}.out', mode='w') as out:
+                with subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT) as subp:
+                    failed = collectdata(subp.pid, runinfo, fetchenviron)
                 if failed:
-                    if argv.get('failfast'):
+                    if failfast:
                         logger.error(f"Process returned {failed}. Ending the benchmark")
                         break
                     else:
                         continue
                 runinfos.append(runinfo)
-                if postcmd:
-                    out.write('='*39 + " POSTCMD " + '='*39 + '\n')
-                    runret = subprocess.run(postcmd, stdout=out, stderr=subprocess.STDOUT)
-                    if argv.get('postfailfast') and runret.returncode:
+                if postcommand:
+                    out.write('=' * 39 + " POSTCMD " + '=' * 39 + '\n')
+                    runret = subprocess.run(postcommand, stdout=out, stderr=subprocess.STDOUT)
+                    if postfailfast and runret.returncode:
                         logger.error(f"Post command returned {runret.returncode}. Ending the benchmark")
                         break
         except KeyboardInterrupt as ki:
@@ -266,10 +234,10 @@ if __name__ == '__main__':
         except Exception:
             logger.exception("Can't open the process")
 
-    report = process_data(runinfos, argv[ENV_I][RAWMEM_I], trim, argv[DETAILS_I], argv[PROCENV_I])
+    report = process_data(runinfos, envdata[RAWMEM_I], trim, gatherdetails, fetchenviron)
     report_logger(report)
-    if argv['json']:
+    if json:
         # Actually, do I really need to make an incremental json?
-        report_json(report, f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%d_%H%M%S")}.json', testname)
-    if argv['xlsx']:
-        report_xlsx(report, f'{folder_prefix}/{procname}', start_time, testname, argv['append'], argv)
+        report_json(report, f'{folder_prefix}/{processname}.{start_time.strftime("%y%m%d_%H%M%S")}.json', testname)
+    if xlsx:
+        report_xlsx(report, f'{folder_prefix}/{processname}', start_time, testname, extendreport, envdata)
