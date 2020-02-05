@@ -1,6 +1,5 @@
 import argparse
 import datetime
-import logging
 import os
 import platform
 import shlex
@@ -11,6 +10,7 @@ import statistics
 from collections import OrderedDict, namedtuple
 from typing import Dict, Any, List
 
+from benchmarkish import *
 import psutil
 
 
@@ -257,8 +257,8 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
 
 def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     out = OrderedDict()
-    Detail = namedtuple("Detail", ['avg_cpu', 'tr_avg_cpu', 'max_cpu', 'max_tr_cpu', 'avg_mem', 'tr_avg_mem',
-                                   'max_mem', 'max_tr_mem', 'user_cput', 'system_cput', 'totaltime'])
+    Detail = namedtuple("Detail", [MEANCPU_I, T_MEANCPU_I, MAXCPU_I, T_MAXCPU_I, MEANMEM_I, T_MEANMEM_I,
+                                   MAXMEM_I, T_MAXMEM_I, CPUTIME_I, SYSCPUTIME_I, TIME_I])
     details = []
     entries = 0
     avgcpusum = 0
@@ -313,48 +313,48 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
             timelist.append(totaltime)
             if is_environ:
                 info.merge_environ()
-    out['entries'] = entries
-    out['trim'] = trim
-    out['avg_cpu'] = f"{(avgcpusum / entries):.2f}%"
-    out['trimmed_avg_cpu'] = f"{(travgcpusum / entries):.2f}%"
-    out['max_cpu'] = f"{(maxcpusum / entries):.2f}%"
-    out['max_trimmed_cpu'] = f"{maxtrcpusum / entries}%"
-    out['avg_mem'] = get_size((vmem / 100) * (avgmemsum / entries))
-    out['trimmed_avg_mem'] = get_size((vmem / 100) * (travgmemsum / entries))
-    out['max_mem'] = get_size((vmem / 100) * (maxmemsum / entries))
-    out['max_trimmed_mem'] = get_size((vmem / 100) * (maxtrmemsum / entries))
-    out['user_cput'] = usercputsum / entries
-    out['system_cput'] = syscputsum / entries
-    out['total_time'] = f"{(totaltimesum / entries):.2f} s"
-    out['max_time'] = f"{max(timelist)} s"
-    out['min_time'] = f"{min(timelist)} s"
-    out['mid_time'] = f"{statistics.median(timelist)} s"
-    out['details'] = details if is_detailed else []
-    out['environ'] = PsRunInfo.environ
+    out[RUNS_I] = entries
+    out[TRIM_I] = trim
+    out[MEANCPU_I] = f"{(avgcpusum / entries):.2f}%"
+    out[T_MEANCPU_I] = f"{(travgcpusum / entries):.2f}%"
+    out[MAXCPU_I] = f"{(maxcpusum / entries):.2f}%"
+    out[T_MAXCPU_I] = f"{maxtrcpusum / entries}%"
+    out[MEANMEM_I] = get_size((vmem / 100) * (avgmemsum / entries))
+    out[T_MEANMEM_I] = get_size((vmem / 100) * (travgmemsum / entries))
+    out[MAXMEM_I] = get_size((vmem / 100) * (maxmemsum / entries))
+    out[T_MAXMEM_I] = get_size((vmem / 100) * (maxtrmemsum / entries))
+    out[CPUTIME_I] = usercputsum / entries
+    out[SYSCPUTIME_I] = syscputsum / entries
+    out[MEANTIME_I] = f"{(totaltimesum / entries):.2f} s"
+    out[MAXTIME_I] = f"{max(timelist):.2f} s"
+    out[MINTIME_I] = f"{min(timelist):.2f} s"
+    out[MIDTIME_I] = f"{statistics.median(timelist):.2f} s"
+    out[DETAILS_I] = details if is_detailed else []
+    out[PROCENV_I] = PsRunInfo.environ
     return out
 
 
 def report_logger(results: dict):
     logger.info('=' * 39 + ' RESULTS ' + '=' * 39)
-    logger.info(f"RUNS: {results['entries']}")
-    logger.info(f"TRIM PERCENTAGE: {results['trim']}%")
-    logger.info(f"AVERAGE CPU USAGE: {results['avg_cpu']}")
-    logger.info(f"AVERAGE CPU USAGE (TRIMMED): {results['trimmed_avg_cpu']}")
-    logger.info(f"MAX CPU USAGE: {results['max_cpu']}")
-    logger.info(f"MAX CPU USAGE (TRIMMED): {results['max_trimmed_cpu']}")
-    logger.info(f"AVERAGE MEMORY USAGE: {results['avg_mem']}")
-    logger.info(f"AVERAGE MEMORY USAGE (TRIMMED): {results['trimmed_avg_mem']}")
-    logger.info(f"MAX MEMORY USAGE: {results['max_mem']}")
-    logger.info(f"MAX MEMORY USAGE (TRIMMED): {results['max_trimmed_mem']}")
-    logger.info(f"CPU TIME (USER): {results['user_cput']}")
-    logger.info(f"CPU TIME (SYSTEM): {results['system_cput']}")
-    logger.info(f"AVERAGE RUN DURATION: {results['total_time']}")
-    logger.info(f"MAX RUN DURATION: {results['max_time']}")
-    logger.info(f"MIN RUN DURATION: {results['min_time']}")
-    logger.info(f"MEDIAN RUN DURATION: {results['mid_time']}")
+    logger.info(f"{RUNS_L}: {results[RUNS_I]}")
+    logger.info(f"{TRIM_L}: {results[TRIM_I]}%")
+    logger.info(f"{MEANCPU_L}: {results[MEANCPU_I]}")
+    logger.info(f"{T_MEANCPU_L}: {results[T_MEANCPU_I]}")
+    logger.info(f"{MAXCPU_L}: {results[MAXCPU_I]}")
+    logger.info(f"{T_MAXCPU_L}: {results[T_MAXCPU_I]}")
+    logger.info(f"{MEANMEM_L}: {results[MEANMEM_I]}")
+    logger.info(f"{T_MEANMEM_L}: {results[T_MEANMEM_I]}")
+    logger.info(f"{MAXMEM_L}: {results[MAXMEM_I]}")
+    logger.info(f"{T_MAXMEM_L}: {results[T_MAXMEM_I]}")
+    logger.info(f"{CPUTIME_L}: {results[CPUTIME_I]}")
+    logger.info(f"{SYSCPUTIME_L}: {results[SYSCPUTIME_I]}")
+    logger.info(f"{MEANTIME_L}: {results[MEANTIME_I]}")
+    logger.info(f"{MAXTIME_L}: {results[MAXTIME_I]}")
+    logger.info(f"{MINTIME_L}: {results[MINTIME_I]}")
+    logger.info(f"{MIDTIME_L}: {results[MIDTIME_I]}")
     logger.info('=' * 39 + ' DETAILS ' + '=' * 39)
-    logger.info(f"{results['details']}")
-    logger.info(f"{results['environ']}")
+    logger.info(f"{results[DETAILS_I]}")
+    logger.info(f"{results[PROCENV_I]}")
 
 
 def report_json(results: dict, fpname: str, tname: str):
@@ -384,58 +384,58 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
 
     boldfont = Font(bold=True)
 
-    cell = ws.cell(1, 1, "RUNS")
+    cell = ws.cell(1, 1, RUNS_L)
     cell.font = boldfont
-    _ = ws.cell(2, 1, results['entries'])
-    cell = ws.cell(1, 2, "TRIM%")
+    _ = ws.cell(2, 1, results[RUNS_I])
+    cell = ws.cell(1, 2, TRIM_L)
     cell.font = boldfont
-    _ = ws.cell(2, 2, (results['trim'] * 100))
-    cell = ws.cell(1, 3, "AVG CPU%")
+    _ = ws.cell(2, 2, (results[TRIM_I] * 100))
+    cell = ws.cell(1, 3, MEANCPU_L)
     cell.font = boldfont
-    _ = ws.cell(2, 3, results['avg_cpu'])
-    cell = ws.cell(1, 4, "TR.AVG CPU%")
+    _ = ws.cell(2, 3, results[MEANCPU_I])
+    cell = ws.cell(1, 4, T_MEANCPU_L)
     cell.font = boldfont
-    _ = ws.cell(2, 4, results['trimmed_avg_cpu'])
-    cell = ws.cell(1, 5, "MAX CPU%")
+    _ = ws.cell(2, 4, results[T_MEANCPU_I])
+    cell = ws.cell(1, 5, MAXCPU_L)
     cell.font = boldfont
-    _ = ws.cell(2, 5, results['max_cpu'])
-    cell = ws.cell(1, 6, "TR.MAX CPU%")
+    _ = ws.cell(2, 5, results[MAXCPU_I])
+    cell = ws.cell(1, 6, T_MAXCPU_L)
     cell.font = boldfont
-    _ = ws.cell(2, 6, results['trimmed_avg_cpu'])
-    cell = ws.cell(1, 7, "AVG MEM")
+    _ = ws.cell(2, 6, results[T_MAXCPU_I])
+    cell = ws.cell(1, 7, MEANMEM_L)
     cell.font = boldfont
-    _ = ws.cell(2, 7, results['avg_mem'])
-    cell = ws.cell(1, 8, "TR.AVG MEM")
+    _ = ws.cell(2, 7, results[MEANMEM_I])
+    cell = ws.cell(1, 8, T_MEANMEM_L)
     cell.font = boldfont
-    _ = ws.cell(2, 8, results['trimmed_avg_mem'])
-    cell = ws.cell(1, 9, "MAX MEM")
+    _ = ws.cell(2, 8, results[T_MEANMEM_I])
+    cell = ws.cell(1, 9, MAXMEM_L)
     cell.font = boldfont
-    _ = ws.cell(2, 9, results['max_mem'])
-    cell = ws.cell(1, 10, "TR.MAX MEM")
+    _ = ws.cell(2, 9, results[MAXMEM_I])
+    cell = ws.cell(1, 10, T_MAXMEM_L)
     cell.font = boldfont
-    _ = ws.cell(2, 10, results['max_trimmed_mem'])
-    cell = ws.cell(1, 11, "USER CPUt")
+    _ = ws.cell(2, 10, results[T_MAXMEM_I])
+    cell = ws.cell(1, 11, CPUTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 11, results['user_cput'])
-    cell = ws.cell(1, 12, "SYS CPUt")
+    _ = ws.cell(2, 11, results[CPUTIME_I])
+    cell = ws.cell(1, 12, SYSCPUTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 12, results['system_cput'])
-    cell = ws.cell(1, 13, "AVG TIME")
+    _ = ws.cell(2, 12, results[SYSCPUTIME_I])
+    cell = ws.cell(1, 13, MEANTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 13, results['total_time'])
-    cell = ws.cell(1, 14, "MAX TIME")
+    _ = ws.cell(2, 13, results[MEANTIME_I])
+    cell = ws.cell(1, 14, MAXTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 14, results['max_time'])
-    cell = ws.cell(1, 15, "MIN TIME")
+    _ = ws.cell(2, 14, results[MAXTIME_I])
+    cell = ws.cell(1, 15, MINTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 15, results['min_time'])
-    cell = ws.cell(1, 16, "MEDIAN TIME")
+    _ = ws.cell(2, 15, results[MINTIME_I])
+    cell = ws.cell(1, 16, MIDTIME_L)
     cell.font = boldfont
-    _ = ws.cell(2, 16, results['mid_time'])
+    _ = ws.cell(2, 16, results[MIDTIME_I])
 
     rownum = 4
     colnum = 3
-    for detail in results['details']:
+    for detail in results[DETAILS_I]:
         _ = ws.cell(rownum, 1, rownum - 3)
         for value in detail:
             _ = ws.cell(rownum, colnum, value)
@@ -445,20 +445,20 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
 
     rownum = 1
     colnum = 18
-    cell = ws.cell(rownum, colnum, "SYSTEM SPECS")
+    cell = ws.cell(rownum, colnum, ENV_L)
     cell.font = boldfont
     rownum += 1
-    for key, value in env['envstats'].items():
+    for key, value in env[ENV_I].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
         _ = ws.cell(rownum, colnum + 1, str(value))
         rownum += 1
         pass
     rownum += 1
-    cell = ws.cell(rownum, colnum, "ENVIRONMENT")
+    cell = ws.cell(rownum, colnum, PROCENV_L)
     cell.font = boldfont
     rownum += 1
-    for key, value in results['environ'].items():
+    for key, value in results[PROCENV_I].items():
         cell = ws.cell(rownum, colnum, key)
         cell.font = boldfont
         _ = ws.cell(rownum, colnum + 1, str(value))
@@ -467,28 +467,12 @@ def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname
     pass
 
 
-def log_init():
-    out = logging.getLogger()
-    out.setLevel(logging.INFO)
-    fh = logging.FileHandler(f'benchmarkish.{datetime.datetime.today().strftime("%d%m%yT%H%M%S")}.log')
-    fh.setLevel(logging.INFO)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s -| %(message)s')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    out.addHandler(fh)
-    out.addHandler(ch)
-    return out
-
-
 if __name__ == '__main__':
     # FIXME
     #   - reporting
     #   - setup.py
 
     argv = resolve_args()
-    logger = log_init()
     collect_envdata(argv)
 
     start_time = datetime.datetime.today()
@@ -514,8 +498,8 @@ if __name__ == '__main__':
         trim /= 100
 
     # create directory structure
-    folder_prefix = f"{argv['envstats']['OS']}/{procname}" if not argv['envname'] \
-        else f"{argv['envstats']['OS']}_{argv['envname']}/{procname}"
+    folder_prefix = f"{argv[ENV_I]['OS']}/{procname}" if not argv['envname'] \
+        else f"{argv[ENV_I]['OS']}_{argv['envname']}/{procname}"
     os.makedirs(folder_prefix, exist_ok=True)
 
     runinfos = []
@@ -524,7 +508,7 @@ if __name__ == '__main__':
         try:
             with open(f'{folder_prefix}/{procname}.{start_time.strftime("%y%m%d_%H%M%S")}.{i}.out', mode='w') as out:
                 with subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT) as subp:
-                    failed = collectdata(subp.pid, runinfo, argv['environ'])
+                    failed = collectdata(subp.pid, runinfo, argv[PROCENV_I])
                 if failed:
                     if argv.get('failfast'):
                         logger.error(f"Process returned {failed}. Ending the benchmark")
@@ -543,7 +527,7 @@ if __name__ == '__main__':
         except Exception:
             logger.exception("Can't open the process")
 
-    report = process_data(runinfos, argv['envstats']['RAW TOTAL MEMORY'], trim, argv['details'], argv['environ'])
+    report = process_data(runinfos, argv[ENV_I]['RAW TOTAL MEMORY'], trim, argv[DETAILS_I], argv[PROCENV_I])
     report_logger(report)
     if argv['json']:
         # Actually, do I really need to make an incremental json?
