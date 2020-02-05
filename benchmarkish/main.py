@@ -11,6 +11,9 @@ from collections import OrderedDict, namedtuple
 from typing import Dict, Any, List
 
 from benchmarkish import *
+from benchmarkish.model import PsRunInfo
+from benchmarkish.format import get_size
+from benchmarkish.report import report_json, report_logger, report_xlsx
 import psutil
 
 
@@ -52,159 +55,27 @@ def resolve_args():
     return vars(p.parse_args())
 
 
-def trim_array(arr: List, mean: float) -> List:
-    if mean == 0:
-        return arr
-    if mean < 0:
-        mean *= -1
-    if mean >= 0.5:
-        logger.info("Won't trim an array over 49%")
-        return arr
-    l_arr = len(arr)
-    if l_arr == 0:
-        return arr
-    l_trim = int(l_arr * (2 * mean))
-    if l_trim % 2:
-        n_remove = int((l_trim - 1) / 2)
-        n_err = 1
-    else:
-        n_remove = int(l_trim / 2)
-        n_err = 0
-    s_arr = sorted(arr)
-    s_arr = s_arr[n_remove:(len(s_arr) - n_remove)]
-    if n_err:
-        s_arr[0] = (s_arr[0] / 2) + (s_arr[len(s_arr)-1] / 2)
-        del s_arr[len(s_arr) - 1]
-    return s_arr
-
-
-class PsRunInfo:
-    environ = {}
-
-    def __init__(self, index: int):
-        self.index = index
-        self.cpu_percent = []
-        self.mem_percent = []
-        self.__trim_cpu_percent = 0
-        self.__trimmed_cpu_percent = None
-        self.__trim_mem_percent = 0
-        self.__trimmed_mem_percent = None
-        self.last_cpu_times = None
-        self.totaltime = None
-        self.environ = None
-
-    def add_cpu_perc(self, cpuperc):
-        self.cpu_percent.append(cpuperc)
-        self.__trimmed_cpu_percent = None
-
-    def avg_cpu_perc(self):
-        return sum(self.cpu_percent) / len(self.cpu_percent)
-
-    def trimmed_avg_cpu_perc(self, trim: float):
-        if trim == 0:
-            return self.avg_cpu_perc()
-        if trim < 0:
-            trim *= -1
-        if trim >= 0.5:
-            logger.info("Won't trim over 49%")
-            return self.avg_cpu_perc()
-        if self.__trim_cpu_percent == trim and self.__trimmed_cpu_percent:
-            return sum(self.__trimmed_cpu_percent) / len(self.__trimmed_cpu_percent)
-        self.__trim_cpu_percent = trim
-        self.__trimmed_cpu_percent = trim_array(self.cpu_percent, trim)
-        return sum(self.__trimmed_cpu_percent) / len(self.__trimmed_cpu_percent)
-
-    def max_cpu_perc(self):
-        return max(self.cpu_percent)
-
-    def max_trimmed_cpu_perc(self, trim: float):
-        if trim == 0:
-            return self.max_cpu_perc()
-        if trim < 0:
-            trim *= -1
-        if trim >= 0.5:
-            logger.info("Won't trim over 49%")
-            return self.max_cpu_perc()
-        if self.__trim_cpu_percent == trim and self.__trimmed_cpu_percent:
-            return max(self.__trimmed_cpu_percent)
-        self.__trim_cpu_percent = trim
-        self.__trimmed_cpu_percent = trim_array(self.cpu_percent, trim)
-        return max(self.__trimmed_cpu_percent)
-
-    def add_mem_perc(self, memperc):
-        self.mem_percent.append(memperc)
-        self.__trimmed_mem_percent = None
-
-    def avg_mem_perc(self):
-        return sum(self.mem_percent) / len(self.mem_percent)
-
-    def trimmed_avg_mem_perc(self, trim: float):
-        if trim == 0:
-            return self.avg_mem_perc()
-        if trim < 0:
-            trim *= -1
-        if trim >= 0.5:
-            logger.info("Won't trim over 49%")
-            return self.avg_mem_perc()
-        if self.__trim_mem_percent == trim and self.__trimmed_mem_percent:
-            return sum(self.__trimmed_mem_percent) / len(self.__trimmed_mem_percent)
-        self.__trim_mem_percent = trim
-        self.__trimmed_mem_percent = trim_array(self.mem_percent, trim)
-        return sum(self.__trimmed_mem_percent) / len(self.__trimmed_mem_percent)
-
-    def max_mem_perc(self):
-        return max(self.cpu_percent)
-
-    def max_trimmed_mem_perc(self, trim: float):
-        if trim == 0:
-            return self.max_mem_perc()
-        if trim < 0:
-            trim *= -1
-        if trim >= 0.5:
-            logger.info("Won't trim over 49%")
-            return self.max_mem_perc()
-        if self.__trim_mem_percent == trim and self.__trimmed_mem_percent:
-            return max(self.__trimmed_mem_percent)
-        self.__trim_mem_percent = trim
-        self.__trimmed_mem_percent = trim_array(self.mem_percent, trim)
-        return max(self.__trimmed_mem_percent)
-
-    def merge_environ(self):
-        PsRunInfo.environ.update(self.environ)
-        del self.environ
-
-
-def get_size(nbytes, suffix="B"):
-    factor = 1024
-    for unit in ["", "K", "M", "G", "T", "P"]:
-        if nbytes < factor:
-            return f"{nbytes:.2f}{unit}{suffix}"
-        nbytes /= factor
-    # This shouldn't happen on real systems, but you can never be sure
-    return f"{nbytes:.2f}{unit}{suffix}"
-
-
 def collect_envdata(argmap: Dict[str, Any]):
     udict = OrderedDict()
 
     # platform info
     uname = platform.uname()
-    udict['OS'] = uname.system
-    udict['OS VERSION'] = uname.version
-    udict['OS RELEASE'] = uname.release
-    udict['OS ARCHITECTURE'] = " ".join(platform.architecture())
-    udict['MACHINE TYPE'] = uname.machine
+    udict[OS_I] = uname.system
+    udict[OSVERSION_I] = uname.version
+    udict[OSRELEASE_I] = uname.release
+    udict[OSARCHITECTURE_I] = " ".join(platform.architecture())
+    udict[MACHINETYPE_I] = uname.machine
 
     # cpu info
-    udict['PHYSICAL CORES'] = psutil.cpu_count(logical=False)
-    udict['LOGICAL CORES'] = psutil.cpu_count(logical=True)
-    udict['USAGE PERCENTAGE @STARTUP'] = psutil.cpu_percent(interval=1.0)
+    udict[PHYCORES_I] = psutil.cpu_count(logical=False)
+    udict[LOGCORES_I] = psutil.cpu_count(logical=True)
+    udict[STARTCPU_I] = psutil.cpu_percent(interval=1.0)
 
     # mem info
     vmem = psutil.virtual_memory()
-    udict['RAW TOTAL MEMORY'] = vmem.total
-    udict['TOTAL MEMORY'] = get_size(vmem.total)
-    udict['AVAILABLE MEMORY @STARTUP'] = get_size(vmem.available)
+    udict[RAWMEM_I] = vmem.total
+    udict[TOTALMEM_I] = get_size(vmem.total)
+    udict[AVAILABLEMEM_I] = get_size(vmem.available)
 
     # log dump
     logger.info('=' * 40 + " SPECS " + '=' * 40)
@@ -212,7 +83,7 @@ def collect_envdata(argmap: Dict[str, Any]):
         logger.info(f"{key}: {value}")
     logger.info('=' * 87)
 
-    argmap['envstats'] = udict
+    argmap[ENV_I] = udict
 
 
 def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
@@ -242,6 +113,7 @@ def collectdata(pid, info: PsRunInfo, collect_environ: bool = False):
             if status == psutil.STATUS_ZOMBIE:
                 # Since we're running inside the popen context, the process WILL remain [DECEASED] on Linux
                 # On Windows NoSuchProcess is thrown instead
+                logger.info("Zombie process, loop interrupted")
                 break
     except KeyboardInterrupt as ki:
         raise ki
@@ -334,139 +206,6 @@ def process_data(infos: List[PsRunInfo], vmem, trim, is_detailed, is_environ):
     return out
 
 
-def report_logger(results: dict):
-    logger.info('=' * 39 + ' RESULTS ' + '=' * 39)
-    logger.info(f"{RUNS_L}: {results[RUNS_I]}")
-    logger.info(f"{TRIM_L}: {results[TRIM_I]}%")
-    logger.info(f"{MEANCPU_L}: {results[MEANCPU_I]}")
-    logger.info(f"{T_MEANCPU_L}: {results[T_MEANCPU_I]}")
-    logger.info(f"{MAXCPU_L}: {results[MAXCPU_I]}")
-    logger.info(f"{T_MAXCPU_L}: {results[T_MAXCPU_I]}")
-    logger.info(f"{MEANMEM_L}: {results[MEANMEM_I]}")
-    logger.info(f"{T_MEANMEM_L}: {results[T_MEANMEM_I]}")
-    logger.info(f"{MAXMEM_L}: {results[MAXMEM_I]}")
-    logger.info(f"{T_MAXMEM_L}: {results[T_MAXMEM_I]}")
-    logger.info(f"{CPUTIME_L}: {results[CPUTIME_I]}")
-    logger.info(f"{SYSCPUTIME_L}: {results[SYSCPUTIME_I]}")
-    logger.info(f"{MEANTIME_L}: {results[MEANTIME_I]}")
-    logger.info(f"{MAXTIME_L}: {results[MAXTIME_I]}")
-    logger.info(f"{MINTIME_L}: {results[MINTIME_I]}")
-    logger.info(f"{MIDTIME_L}: {results[MIDTIME_I]}")
-    logger.info('=' * 39 + ' DETAILS ' + '=' * 39)
-    logger.info(f"{results[DETAILS_I]}")
-    logger.info(f"{results[PROCENV_I]}")
-
-
-def report_json(results: dict, fpname: str, tname: str):
-    import json
-    with open(fpname, mode='w') as t:
-        json.dump({tname: results}, t)
-
-
-def report_xlsx(results: dict, fprefix: str, starttime: datetime.datetime, tname: str, append: bool, env: dict):
-    from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font
-
-    # TODO Split new wb and update wb
-    if append:
-        fname = f"{fprefix}.{starttime.strftime('%y%m%d')}.xlsx"
-        tname = f"{tname}_{starttime.strftime('%H%M%S')}"
-    else:
-        fname = f"{fprefix}.{starttime.strftime('%y%m%d_%H%M%S')}.xlsx"
-
-    if os.path.exists(fname):
-        wb = load_workbook(fname)
-        ws = wb.create_sheet()
-    else:
-        wb = Workbook()
-        ws = wb.active if wb.active else wb.create_sheet()
-    ws.title = tname
-
-    boldfont = Font(bold=True)
-
-    cell = ws.cell(1, 1, RUNS_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 1, results[RUNS_I])
-    cell = ws.cell(1, 2, TRIM_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 2, (results[TRIM_I] * 100))
-    cell = ws.cell(1, 3, MEANCPU_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 3, results[MEANCPU_I])
-    cell = ws.cell(1, 4, T_MEANCPU_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 4, results[T_MEANCPU_I])
-    cell = ws.cell(1, 5, MAXCPU_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 5, results[MAXCPU_I])
-    cell = ws.cell(1, 6, T_MAXCPU_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 6, results[T_MAXCPU_I])
-    cell = ws.cell(1, 7, MEANMEM_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 7, results[MEANMEM_I])
-    cell = ws.cell(1, 8, T_MEANMEM_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 8, results[T_MEANMEM_I])
-    cell = ws.cell(1, 9, MAXMEM_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 9, results[MAXMEM_I])
-    cell = ws.cell(1, 10, T_MAXMEM_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 10, results[T_MAXMEM_I])
-    cell = ws.cell(1, 11, CPUTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 11, results[CPUTIME_I])
-    cell = ws.cell(1, 12, SYSCPUTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 12, results[SYSCPUTIME_I])
-    cell = ws.cell(1, 13, MEANTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 13, results[MEANTIME_I])
-    cell = ws.cell(1, 14, MAXTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 14, results[MAXTIME_I])
-    cell = ws.cell(1, 15, MINTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 15, results[MINTIME_I])
-    cell = ws.cell(1, 16, MIDTIME_L)
-    cell.font = boldfont
-    _ = ws.cell(2, 16, results[MIDTIME_I])
-
-    rownum = 4
-    colnum = 3
-    for detail in results[DETAILS_I]:
-        _ = ws.cell(rownum, 1, rownum - 3)
-        for value in detail:
-            _ = ws.cell(rownum, colnum, value)
-            colnum += 1
-        rownum += 1
-        colnum = 3
-
-    rownum = 1
-    colnum = 18
-    cell = ws.cell(rownum, colnum, ENV_L)
-    cell.font = boldfont
-    rownum += 1
-    for key, value in env[ENV_I].items():
-        cell = ws.cell(rownum, colnum, key)
-        cell.font = boldfont
-        _ = ws.cell(rownum, colnum + 1, str(value))
-        rownum += 1
-        pass
-    rownum += 1
-    cell = ws.cell(rownum, colnum, PROCENV_L)
-    cell.font = boldfont
-    rownum += 1
-    for key, value in results[PROCENV_I].items():
-        cell = ws.cell(rownum, colnum, key)
-        cell.font = boldfont
-        _ = ws.cell(rownum, colnum + 1, str(value))
-
-    wb.save(fname)
-    pass
-
-
 if __name__ == '__main__':
     # FIXME
     #   - reporting
@@ -527,7 +266,7 @@ if __name__ == '__main__':
         except Exception:
             logger.exception("Can't open the process")
 
-    report = process_data(runinfos, argv[ENV_I]['RAW TOTAL MEMORY'], trim, argv[DETAILS_I], argv[PROCENV_I])
+    report = process_data(runinfos, argv[ENV_I][RAWMEM_I], trim, argv[DETAILS_I], argv[PROCENV_I])
     report_logger(report)
     if argv['json']:
         # Actually, do I really need to make an incremental json?
